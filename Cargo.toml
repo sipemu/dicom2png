@@ -1,0 +1,10 @@
+[package]
+name = "dicom2png"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+dicom-object = { version = "0.9", features = ["inventory-registry"] }
+dicom-pixeldata = { version = "0.9", features = ["image", "native", "rayon"] }
+rayon = "1"
