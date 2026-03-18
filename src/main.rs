@@ -1,10 +1,13 @@
-use std::fs;
+use std::fs::{self, File};
+use std::io::BufWriter;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use clap::Parser;
 use dicom_object::open_file;
 use dicom_pixeldata::PixelDecoder;
+use image::ImageEncoder;
+use image::codecs::png::{CompressionType, FilterType, PngEncoder};
 use rayon::prelude::*;
 
 #[derive(Parser)]
@@ -16,6 +19,10 @@ struct Cli {
     /// Output directory (defaults to "output")
     #[arg(short, long, default_value = "output")]
     output: PathBuf,
+
+    /// Disable PNG compression (faster, larger files)
+    #[arg(long)]
+    no_compression: bool,
 }
 
 /// A conversion job: input .dcm path and the output .png path.
@@ -64,6 +71,7 @@ fn collect_jobs(input: &Path, output: &Path) -> Vec<Job> {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
+    let no_compression = cli.no_compression;
 
     let jobs = collect_jobs(&cli.input, &cli.output);
 
@@ -85,8 +93,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let success = AtomicUsize::new(0);
     let failed = AtomicUsize::new(0);
 
-    jobs.par_iter()
-        .for_each(|job| match convert_dcm_to_png(&job.input, &job.output) {
+    jobs.par_iter().for_each(|job| {
+        match convert_dcm_to_png(&job.input, &job.output, no_compression) {
             Ok(()) => {
                 println!("  OK: {}", job.output.display());
                 success.fetch_add(1, Ordering::Relaxed);
@@ -95,7 +103,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 eprintln!("  FAIL: {} — {e}", job.input.display());
                 failed.fetch_add(1, Ordering::Relaxed);
             }
-        });
+        }
+    });
 
     let s = success.load(Ordering::Relaxed);
     let f = failed.load(Ordering::Relaxed);
@@ -103,10 +112,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn convert_dcm_to_png(input: &Path, output: &Path) -> Result<(), Box<dyn std::error::Error>> {
+fn convert_dcm_to_png(
+    input: &Path,
+    output: &Path,
+    no_compression: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let obj = open_file(input)?;
     let pixel_data = obj.decode_pixel_data()?;
     let image = pixel_data.to_dynamic_image(0)?;
-    image.save(output)?;
+
+    if no_compression {
+        let file = File::create(output)?;
+        let writer = BufWriter::new(file);
+        let encoder =
+            PngEncoder::new_with_quality(writer, CompressionType::Fast, FilterType::NoFilter);
+        let img = image.as_bytes();
+        encoder.write_image(img, image.width(), image.height(), image.color().into())?;
+    } else {
+        image.save(output)?;
+    }
+
     Ok(())
 }

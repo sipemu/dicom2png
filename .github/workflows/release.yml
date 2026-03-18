@@ -18,6 +18,9 @@ jobs:
           - target: aarch64-apple-darwin
             os: macos-latest
             artifact: dicom2png-macos-arm64
+          - target: x86_64-apple-darwin
+            os: macos-13
+            artifact: dicom2png-macos-amd64
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             artifact: dicom2png-windows-amd64

@@ -7,4 +7,5 @@ edition = "2024"
 clap = { version = "4", features = ["derive"] }
 dicom-object = { version = "0.9", features = ["inventory-registry"] }
 dicom-pixeldata = { version = "0.9", features = ["image", "native", "rayon"] }
+image = "0.25"
 rayon = "1"
