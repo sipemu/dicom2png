@@ -3,15 +3,25 @@ use std::io::BufWriter;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use dicom_object::open_file;
 use dicom_pixeldata::PixelDecoder;
 use image::ImageEncoder;
-use image::codecs::png::{CompressionType, FilterType, PngEncoder};
 use rayon::prelude::*;
 
+#[derive(Clone, Copy, ValueEnum)]
+enum OutputFormat {
+    /// PNG (compressed)
+    Png,
+    /// TIFF (uncompressed)
+    Tiff,
+}
+
 #[derive(Parser)]
-#[command(name = "dicom2png", about = "Convert DICOM (.dcm) files to PNG")]
+#[command(
+    name = "dicom2png",
+    about = "Convert DICOM (.dcm) files to PNG or TIFF"
+)]
 struct Cli {
     /// Input path: a .dcm file, a directory of .dcm files, or a parent directory containing subdirectories of .dcm files
     input: PathBuf,
@@ -20,23 +30,30 @@ struct Cli {
     #[arg(short, long, default_value = "output")]
     output: PathBuf,
 
-    /// Disable PNG compression (faster, larger files)
-    #[arg(long)]
-    no_compression: bool,
+    /// Output format
+    #[arg(short, long, default_value = "png")]
+    format: OutputFormat,
 }
 
-/// A conversion job: input .dcm path and the output .png path.
+/// A conversion job: input .dcm path and the output path.
 struct Job {
     input: PathBuf,
     output: PathBuf,
 }
 
-fn collect_jobs(input: &Path, output: &Path) -> Vec<Job> {
+fn file_extension(format: OutputFormat) -> &'static str {
+    match format {
+        OutputFormat::Png => "png",
+        OutputFormat::Tiff => "tiff",
+    }
+}
+
+fn collect_jobs(input: &Path, output: &Path, ext: &str) -> Vec<Job> {
     if input.is_file() {
         let stem = input.file_stem().unwrap_or_default().to_string_lossy();
         return vec![Job {
             input: input.to_path_buf(),
-            output: output.join(format!("{stem}.png")),
+            output: output.join(format!("{stem}.{ext}")),
         }];
     }
 
@@ -51,7 +68,7 @@ fn collect_jobs(input: &Path, output: &Path) -> Vec<Job> {
 
         if path.is_file() && path.extension().and_then(|e| e.to_str()) == Some("dcm") {
             let out_name = format!(
-                "{}.png",
+                "{}.{ext}",
                 path.file_stem().unwrap_or_default().to_string_lossy()
             );
             jobs.push(Job {
@@ -59,10 +76,9 @@ fn collect_jobs(input: &Path, output: &Path) -> Vec<Job> {
                 output: output.join(out_name),
             });
         } else if path.is_dir() {
-            // Subdirectory: preserve folder name in output
             let folder_name = path.file_name().unwrap_or_default();
             let sub_output = output.join(folder_name);
-            jobs.extend(collect_jobs(&path, &sub_output));
+            jobs.extend(collect_jobs(&path, &sub_output, ext));
         }
     }
 
@@ -71,9 +87,10 @@ fn collect_jobs(input: &Path, output: &Path) -> Vec<Job> {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
-    let no_compression = cli.no_compression;
+    let format = cli.format;
+    let ext = file_extension(format);
 
-    let jobs = collect_jobs(&cli.input, &cli.output);
+    let jobs = collect_jobs(&cli.input, &cli.output, ext);
 
     if jobs.is_empty() {
         eprintln!("No .dcm files found in {:?}", cli.input);
@@ -88,13 +105,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         fs::create_dir_all(dir)?;
     }
 
-    println!("Converting {} file(s)...", jobs.len());
+    println!("Converting {} file(s) to {ext}...", jobs.len());
 
     let success = AtomicUsize::new(0);
     let failed = AtomicUsize::new(0);
 
-    jobs.par_iter().for_each(|job| {
-        match convert_dcm_to_png(&job.input, &job.output, no_compression) {
+    jobs.par_iter()
+        .for_each(|job| match convert_dcm(&job.input, &job.output, format) {
             Ok(()) => {
                 println!("  OK: {}", job.output.display());
                 success.fetch_add(1, Ordering::Relaxed);
@@ -103,8 +120,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 eprintln!("  FAIL: {} — {e}", job.input.display());
                 failed.fetch_add(1, Ordering::Relaxed);
             }
-        }
-    });
+        });
 
     let s = success.load(Ordering::Relaxed);
     let f = failed.load(Ordering::Relaxed);
@@ -112,24 +128,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn convert_dcm_to_png(
+fn convert_dcm(
     input: &Path,
     output: &Path,
-    no_compression: bool,
+    format: OutputFormat,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let obj = open_file(input)?;
     let pixel_data = obj.decode_pixel_data()?;
     let image = pixel_data.to_dynamic_image(0)?;
 
-    if no_compression {
-        let file = File::create(output)?;
-        let writer = BufWriter::new(file);
-        let encoder =
-            PngEncoder::new_with_quality(writer, CompressionType::Fast, FilterType::NoFilter);
-        let img = image.as_bytes();
-        encoder.write_image(img, image.width(), image.height(), image.color().into())?;
-    } else {
-        image.save(output)?;
+    match format {
+        OutputFormat::Png => {
+            image.save(output)?;
+        }
+        OutputFormat::Tiff => {
+            let file = File::create(output)?;
+            let writer = BufWriter::new(file);
+            let encoder = image::codecs::tiff::TiffEncoder::new(writer);
+            encoder.write_image(
+                image.as_bytes(),
+                image.width(),
+                image.height(),
+                image.color().into(),
+            )?;
+        }
     }
 
     Ok(())

@@ -1,12 +1,13 @@
 # dicom2png
 
-A fast CLI tool to convert DICOM (`.dcm`) files to PNG images, written in Rust.
+A fast CLI tool to convert DICOM (`.dcm`) files to PNG or TIFF images, written in Rust.
 
 ## Features
 
 - Convert single `.dcm` files or entire directories
 - Recursive directory traversal with preserved folder structure
 - Parallel conversion using Rayon
+- Output formats: PNG (compressed) or TIFF (uncompressed)
 
 ## Installation
 
@@ -24,7 +25,7 @@ Download a prebuilt binary for your platform from the
 ## Usage
 
 ```bash
-# Convert all .dcm files in a directory
+# Convert all .dcm files in a directory (default: PNG)
 dicom2png path/to/dicoms/ -o output/
 
 # Convert a parent directory with multiple subdirectories
@@ -33,6 +34,9 @@ dicom2png data/ -o output/
 
 # Convert a single file
 dicom2png scan.dcm -o output/
+
+# Output as uncompressed TIFF
+dicom2png data/ -o output/ -f tiff
 ```
 
 ### Options
@@ -44,6 +48,7 @@ Arguments:
 
 Options:
   -o, --output <OUTPUT>  Output directory [default: output]
+  -f, --format <FORMAT>  Output format: png (compressed), tiff (uncompressed) [default: png]
   -h, --help             Print help
 ```
 
