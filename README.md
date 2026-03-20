@@ -6,6 +6,7 @@ A fast CLI tool to convert DICOM (`.dcm`) files to PNG or TIFF images, written i
 
 - Convert single `.dcm` files or entire directories
 - Recursive directory traversal with preserved folder structure
+- Multi-frame DICOM support: automatically extracts all frames
 - Parallel conversion using Rayon
 - Output formats: PNG (compressed) or TIFF (uncompressed)
 
@@ -37,6 +38,21 @@ dicom2png scan.dcm -o output/
 
 # Output as uncompressed TIFF
 dicom2png data/ -o output/ -f tiff
+```
+
+### Multi-frame DICOM files
+
+Multi-frame DICOM files are automatically detected. Each frame is saved as a
+separate image in a subdirectory named after the DICOM file:
+
+```
+output/
+  single_frame_scan.png          # single-frame: one file
+  multi_frame_scan/              # multi-frame: directory with numbered frames
+    000000.png
+    000001.png
+    000002.png
+    ...
 ```
 
 ### Options
